@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Nusantara - Fase Peretasan</title>
+    <style>
+        /* Gaya Estetika Cyberpunk & Glassmorphism */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #08080a;
+            color: #e0e0e0;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        #coreCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 1;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Panel Game Over di tengah layar */
+        #gameOverScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .glass-panel {
+            background: rgba(12, 16, 28, 0.55);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 243, 255, 0.25);
+            border-radius: 12px;
+            padding: 20px 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .neon-text {
+            color: #00f3ff;
+            text-shadow: 0 0 5px #00f3ff;
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+        }
+
+        .neon-text-danger {
+            color: #ff0055;
+            text-shadow: 0 0 10px #ff0055;
+            margin: 0 0 15px 0;
+            text-transform: uppercase;
+        }
+        
+        .tutorial {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-top: 10px;
+        }
+
+        /* Desain Tombol Cyberpunk */
+        .cyber-btn {
+            background: transparent;
+            color: #00f3ff;
+            border: 2px solid #00f3ff;
+            padding: 12px 24px;
+            font-size: 1.1rem;
+            font-family: inherit;
+            cursor: pointer;
+            text-transform: uppercase;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 0 0px #00f3ff;
+        }
+
+        .cyber-btn:hover {
+            background: rgba(0, 243, 255, 0.2);
+            box-shadow: inset 0 0 10px rgba(0, 243, 255, 0.5), 0 0 15px #00f3ff;
+            padding-left: 30px;
+            padding-right: 30px;
+        }
+
+        .hide {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Panel Informasi (UI) Kiri Atas -->
+    <div id="ui-layer" class="glass-panel">
+        <h2 class="neon-text" style="font-size: 1.2rem;">Sistem Eksekusi Saraf</h2>
+        <div>Integritas Memori: <span id="scoreDisplay" style="color: #fcee0a; font-weight: bold; font-size: 1.2rem;">0</span>%</div>
+        <div class="tutorial">Kontrol: Panah (PC) / Sentuh & Geser (Mobile)</div>
+    </div>
+
+    <!-- Layar Game Over (Disembunyikan di awal) -->
+    <div id="gameOverScreen" class="glass-panel hide">
+        <h1 class="neon-text-danger">Peretasan Gagal!</h1>
+        <p style="font-size: 1.2rem;">Sistem Terdistorsi Virus.</p>
+        <p>Skor Akhir: <span id="finalScoreDisplay" style="color: #fcee0a; font-weight: bold; font-size: 1.5rem;">0</span>%</p>
+        <button id="retryBtn" class="cyber-btn">Coba Lagi</button>
+    </div>
+
+    <!-- Kanvas Render Game -->
+    <canvas id="coreCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('coreCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreDisplay = document.getElementById('finalScoreDisplay');
+        const retryBtn = document.getElementById('retryBtn');
+
+        let animationFrameId;
+
+        // Menyesuaikan ukuran kanvas dengan layar
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Entitas Pemain
+        const player = {
+            width: 25,
+            height: 25,
+            color: '#00f3ff',
+            speed: 7,
+            x: 0,
+            y: 0
+        };
+
+        let viruses = [];
+        let score = 0;
+        let isGameOver = false;
+        const keys = {};
+
+        // Inisialisasi Posisi Awal Pemain & Reset Memori
+        function resetGame() {
+            player.x = canvas.width / 2 - (player.width / 2);
+            player.y = canvas.height - 150;
+            viruses = [];
+            score = 0;
+            scoreDisplay.innerText = score;
+            isGameOver = false;
+            gameOverScreen.classList.add('hide'); 
+            
+            // Hapus sisa render agar layar kanvas kembali bersih sebelum loop dimulai
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            
+            gameLoop();
+        }
+
+        // Kontrol Keyboard
+        window.addEventListener('keydown', e => keys[e.key] = true);
+        window.addEventListener('keyup', e => keys[e.key] = false);
+
+        // Kontrol Sentuh untuk Mobile
+        canvas.addEventListener('touchmove', e => {
+            if (isGameOver) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            player.x = touch.clientX - (player.width / 2);
+            player.y = touch.clientY - (player.height / 2);
+        }, { passive: false });
+
+        // Fungsi Memunculkan Rintangan (Virus Trauma)
+        function spawnVirus() {
+            viruses.push({
+                x: Math.random() * (canvas.width - 30),
+                y: -50,
+                width: 20 + Math.random() * 20,
+                height: 20 + Math.random() * 20,
+                color: Math.random() > 0.5 ? '#ff00ff' : '#fcee0a',
+                speedY: 4 + Math.random() * 5,
+                speedX: (Math.random() - 0.5) * 3
+            });
+        }
+
+        // Logika Fisika dan Benturan
+        function update() {
+            if (isGameOver) return;
+
+            // Pergerakan Pemain dengan batas layar
+            if ((keys['ArrowLeft'] || keys['a']) && player.x > 0) player.x -= player.speed;
+            if ((keys['ArrowRight'] || keys['d']) && player.x < canvas.width - player.width) player.x += player.speed;
+            if ((keys['ArrowUp'] || keys['w']) && player.y > 0) player.y -= player.speed;
+            if ((keys['ArrowDown'] || keys['s']) && player.y < canvas.height - player.height) player.y += player.speed;
+
+            // Pergerakan Virus
+            for (let i = viruses.length - 1; i >= 0; i--) {
+                let v = viruses[i];
+                v.y += v.speedY;
+                v.x += v.speedX;
+
+                // Cek Benturan Geometris Persegi Panjang
+                if (player.x < v.x + v.width &&
+                    player.x + player.width > v.x &&
+                    player.y < v.y + v.height &&
+                    player.height + player.y > v.y) {
+                    
+                    isGameOver = true;
+                    finalScoreDisplay.innerText = score;
+                    gameOverScreen.classList.remove('hide'); // Munculkan layar Game Over
+                    return;
+                }
+
+                // Tambah skor jika berhasil menghindar melewati batas bawah
+                if (v.y > canvas.height) {
+                    viruses.splice(i, 1);
+                    score += 5;
+                    scoreDisplay.innerText = score;
+                }
+            }
+
+            // Kemunculan musuh secara acak bertambah agresif seiring naiknya skor
+            if (Math.random() < 0.06 + (score * 0.0002)) spawnVirus();
+        }
+
+        // Render Grafis
+        function draw() {
+            // Efek bayangan bergerak (Trail effect) pada latar belakang
+            ctx.fillStyle = 'rgba(8, 8, 10, 0.3)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Gambar Pemain
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = player.color;
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // Gambar Virus (segitiga digital)
+            viruses.forEach(v => {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = v.color;
+                ctx.fillStyle = v.color;
+                
+                ctx.beginPath();
+                ctx.moveTo(v.x, v.y);
+                ctx.lineTo(v.x + v.width, v.y + (v.height/2));
+                ctx.lineTo(v.x + (v.width/2), v.y + v.height);
+                ctx.closePath();
+                ctx.fill();
+            });
+
+            ctx.shadowBlur = 0; // Reset parameter pencahayaan
+        }
+
+        // Siklus Permainan Utama (Game Loop)
+        function gameLoop() {
+            if (isGameOver) return;
+            
+            update();
+            draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // Menangkap Event Klik pada Tombol Coba Lagi
+        retryBtn.addEventListener('click', () => {
+            cancelAnimationFrame(animationFrameId);
+            resetGame();
+        });
+
+        // Mulai Game untuk pertama kali saat halaman dimuat
+        resetGame();
+    </script>
+</body>
+</html>
